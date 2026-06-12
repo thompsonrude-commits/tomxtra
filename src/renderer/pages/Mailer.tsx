@@ -65,6 +65,11 @@ export const Mailer: React.FC = () => {
   // Sender panel tab
   const [senderTab, setSenderTab] = useState<'web' | 'smtp'>('web');
 
+  // Saved email templates
+  const [templates, setTemplates] = useState<{ id: number; name: string; subject: string; body: string }[]>([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+
   const SPAM_TRIGGER_WORDS = [
     'free', 'win', 'winner', 'cash', 'money', 'urgent', 'act now', 'guarantee',
     '100%', 'no cost', 'no obligation', 'offer', 'congratulations', 'claims',
@@ -168,20 +173,44 @@ export const Mailer: React.FC = () => {
       try {
         const s = await window.electronAPI.getSmtps();
         setSmtps(Array.isArray(s) ? s : []);
-        
         const l = await window.electronAPI.getMailingLogs();
         setLogs(Array.isArray(l) ? l : []);
-
-        // Check if already running
         const stats = await window.electronAPI.getStats();
-        if (stats && stats.isMailerRunning) {
-          setIsRunning(true);
-          setStatus('Sending...');
-        }
+        if (stats && stats.isMailerRunning) { setIsRunning(true); setStatus('Sending...'); }
+        // Load saved templates
+        const t = await (window.electronAPI as any).getEmailTemplates?.();
+        if (Array.isArray(t)) setTemplates(t);
       } catch (err) {
         console.error('Failed to load Mailer data:', err);
       }
     }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!subject && !body) { alert('Please fill in subject and body before saving a template'); return; }
+    const name = prompt('Enter a name for this template:');
+    if (!name) return;
+    setSavingTemplate(true);
+    try {
+      await (window.electronAPI as any).saveEmailTemplate?.({ name, subject, body });
+      const t = await (window.electronAPI as any).getEmailTemplates?.();
+      if (Array.isArray(t)) setTemplates(t);
+      alert(`Template "${name}" saved!`);
+    } catch {}
+    setSavingTemplate(false);
+  };
+
+  const handleLoadTemplate = (tpl: { subject: string; body: string }) => {
+    setSubject(tpl.subject);
+    setBody(tpl.body);
+    setShowTemplates(false);
+    window.electronAPI?.saveMailingSetting({ key: 'subject', value: tpl.subject });
+    window.electronAPI?.saveMailingSetting({ key: 'body', value: tpl.body });
+  };
+
+  const handleDeleteTemplate = async (id: number) => {
+    await (window.electronAPI as any).deleteEmailTemplate?.(id);
+    setTemplates(prev => prev.filter(t => t.id !== id));
   };
 
   const handleConnectGmail = async () => {
@@ -951,7 +980,40 @@ export const Mailer: React.FC = () => {
              <div className="space-y-4">
                 <div className="flex justify-between items-center px-1">
                   <label className="text-xs font-bold text-gray-500 uppercase">Message Body (HTML supported)</label>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
+                    {/* Template buttons */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowTemplates(!showTemplates)}
+                        className="text-[10px] text-cyber-accent border border-cyber-accent/30 px-2 py-0.5 rounded hover:bg-cyber-accent/10 transition-all"
+                      >
+                        📂 Templates {templates.length > 0 && `(${templates.length})`}
+                      </button>
+                      {showTemplates && templates.length > 0 && (
+                        <div className="absolute right-0 top-6 z-50 bg-cyber-card border border-gray-700 rounded-xl shadow-2xl w-72 max-h-[300px] overflow-y-auto custom-scrollbar">
+                          <div className="px-3 py-2 border-b border-gray-700 flex justify-between items-center">
+                            <p className="text-[10px] text-gray-400 font-bold uppercase">Saved Templates</p>
+                            <button onClick={() => setShowTemplates(false)} className="text-gray-500 hover:text-white text-xs">✕</button>
+                          </div>
+                          {templates.map(t => (
+                            <div key={t.id} className="flex items-center justify-between px-3 py-2 hover:bg-gray-800/50 group">
+                              <button onClick={() => handleLoadTemplate(t)} className="text-left flex-1 min-w-0">
+                                <p className="text-xs font-medium text-cyber-text truncate">{t.name}</p>
+                                <p className="text-[9px] text-gray-500 truncate">{t.subject}</p>
+                              </button>
+                              <button onClick={() => handleDeleteTemplate(t.id)} className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 ml-2 text-xs shrink-0">✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleSaveTemplate}
+                      disabled={savingTemplate}
+                      className="text-[10px] text-green-400 border border-green-500/30 px-2 py-0.5 rounded hover:bg-green-500/10 transition-all disabled:opacity-50"
+                    >
+                      💾 Save
+                    </button>
                     {['{email}', '{domain}', '{date}'].map(tag => (
                       <span key={tag} className="text-[10px] bg-cyber-accent/10 border border-cyber-accent/30 text-cyber-accent px-1.5 py-0.5 rounded font-mono cursor-help" title={`Replaced by recipient's ${tag.slice(1, -1)}`}>
                         {tag}
@@ -1001,8 +1063,8 @@ export const Mailer: React.FC = () => {
                )}
              </div>
 
-             {/* Campaign Report */}
-             {campaignReport && !isRunning && (
+             {/* Campaign Report — shows after SMTP or web campaign completes */}
+             {campaignReport && !isRunning && !webCampaignRunning && (
                <div className="bg-cyber-accent/5 border border-cyber-accent/20 rounded-xl p-4 space-y-3">
                  <div className="flex justify-between items-center">
                    <h4 className="text-xs font-bold text-cyber-accent uppercase tracking-wider">Campaign Report</h4>

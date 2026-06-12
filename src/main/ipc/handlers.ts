@@ -308,6 +308,11 @@ export function registerIpcHandlers() {
   ipcMain.handle('get-mailing-logs', async () => db.getMailingLogs());
   ipcMain.handle('get-mailing-settings', async () => db.getMailingSettings());
   ipcMain.handle('save-mailing-setting', async (_event, { key, value }) => db.saveMailingSetting(key, value));
+
+  // Email Templates
+  ipcMain.handle('get-email-templates', async () => db.getEmailTemplates());
+  ipcMain.handle('save-email-template', async (_event, { name, subject, body }) => db.saveEmailTemplate(name, subject, body));
+  ipcMain.handle('delete-email-template', async (_event, id) => db.deleteEmailTemplate(id));
   
   ipcMain.handle('start-mailing', async (_event, config: any) => {
     const win = BrowserWindow.getAllWindows()[0];

@@ -191,6 +191,14 @@ function createTables() {
     key TEXT PRIMARY KEY,
     value TEXT
   )`);
+  db.run(`CREATE TABLE IF NOT EXISTS email_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  )`);
 }
 
 function query(sql: string, params: any[] = []): any[] {
@@ -452,16 +460,39 @@ export function clearMailingLogs() {
 
 export function saveMailingSetting(key: string, value: string) {
   run('INSERT OR REPLACE INTO mailing_settings (key, value) VALUES (?, ?)', [key, value]);
-  forceSave(); // Force immediate disk write for settings
+  forceSave();
 }
 
 export function getMailingSettings(): Record<string, string> {
   const rows = query('SELECT * FROM mailing_settings');
   const settings: Record<string, string> = {};
-  rows.forEach(row => {
-    settings[row.key] = row.value;
-  });
+  rows.forEach(row => { settings[row.key] = row.value; });
   return settings;
+}
+
+// ─── Email Templates ──────────────────────────────────────────────────────────
+
+export function saveEmailTemplate(name: string, subject: string, body: string): number {
+  const existing = query('SELECT id FROM email_templates WHERE name = ?', [name]);
+  if (existing.length > 0) {
+    run('UPDATE email_templates SET subject=?, body=?, updated_at=datetime("now") WHERE name=?', [subject, body, name]);
+    forceSave();
+    return existing[0].id;
+  } else {
+    run('INSERT INTO email_templates (name, subject, body) VALUES (?, ?, ?)', [name, subject, body]);
+    forceSave();
+    const rows = query('SELECT last_insert_rowid() as id');
+    return rows[0]?.id || 0;
+  }
+}
+
+export function getEmailTemplates(): any[] {
+  return query('SELECT id, name, subject, body, created_at as createdAt, updated_at as updatedAt FROM email_templates ORDER BY updated_at DESC');
+}
+
+export function deleteEmailTemplate(id: number): void {
+  run('DELETE FROM email_templates WHERE id = ?', [id]);
+  forceSave();
 }
 
 // Proxy Management
