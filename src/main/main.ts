@@ -6,6 +6,12 @@ import { initDatabase, forceSave, getProxies, getWorkingProxies, updateProxyStat
 import { checkTrialStatus } from './license/trial';
 import { fetchFreeProxies } from './crawler/proxyFetcher';
 
+// Make the app look like Chrome to web services — but don't change the app name
+// as that breaks chromium package path resolution
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+app.commandLine.appendSwitch('no-first-run');
+app.commandLine.appendSwitch('no-default-browser-check');
+
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {

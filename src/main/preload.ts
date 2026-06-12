@@ -80,4 +80,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('mailing-event', callback);
     return () => ipcRenderer.removeListener('mailing-event', callback);
   },
+
+  // Web Email Accounts (Gmail / Outlook browser login)
+  openGmailLogin: () => ipcRenderer.invoke('open-gmail-login'),
+  openOutlookLogin: () => ipcRenderer.invoke('open-outlook-login'),
+  openWebLogin: (data: { providerId: string; customUrl?: string }) => ipcRenderer.invoke('open-web-login', data),
+  getAvailableProviders: () => ipcRenderer.invoke('get-available-providers'),
+  getWebAccounts: () => ipcRenderer.invoke('get-web-accounts'),
+  checkWebLoginStatus: () => ipcRenderer.invoke('check-web-login-status'),
+  logoutWebAccount: (id: string) => ipcRenderer.invoke('logout-web-account', id),
+  logoutGmail: () => ipcRenderer.invoke('logout-gmail'),
+  logoutOutlook: () => ipcRenderer.invoke('logout-outlook'),
+  startWebCampaign: (config: any) => ipcRenderer.invoke('start-web-campaign', config),
+  onWebCampaignEvent: (callback: (event: any, data: any) => void) => {
+    ipcRenderer.on('web-campaign-event', callback);
+    return () => ipcRenderer.removeListener('web-campaign-event', callback);
+  },
+  // VPN Manager
+  fetchVpnServers: () => ipcRenderer.invoke('fetch-vpn-servers'),
+  connectVpn: (data: { countryCode: string }) => ipcRenderer.invoke('connect-vpn', data),
+  disconnectVpn: () => ipcRenderer.invoke('disconnect-vpn'),
+  downloadWireproxy: () => ipcRenderer.invoke('download-wireproxy'),
+  getPublicIp: () => ipcRenderer.invoke('get-public-ip'),
+  getActiveVpn: () => ipcRenderer.invoke('get-active-vpn'),
 });

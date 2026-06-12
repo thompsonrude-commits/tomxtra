@@ -1,7 +1,7 @@
 {
   "name": "tomxtractor-49ja",
-  "version": "1.0.12",
-  "description": "TomXtractor 49ja v1.0.12 - Professional Global Email Extraction & Verified Mailing Tool",
+  "version": "1.0.13",
+  "description": "TomXtractor 49ja v1.0.13 - Professional Global Email Extraction & Verified Mailing Tool",
   "main": "dist/main/main.js",
   "scripts": {
     "dev": "set ELECTRON_RUN_AS_NODE=&& concurrently \"npm run dev:renderer\" \"npm run dev:main\"",

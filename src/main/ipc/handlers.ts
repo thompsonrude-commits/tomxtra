@@ -8,9 +8,20 @@ import { generateMachineId } from '../license/fingerprint';
 import { activateLicense } from '../license/activation';
 import { verifyEmail } from '../email/verifier';
 import { emailMailer } from '../email/mailer';
-import { fetchFreeProxies } from '../crawler/proxyFetcher';
+import { fetchFreeProxies, ensureWorkingProxies } from '../crawler/proxyFetcher';
 import { checkDomainDeliverability } from '../utils/emailValidator';
 import { scoreEmailForMarketing } from '../utils/marketingValidator';
+import {
+  openGmailLogin, openOutlookLogin, openWebLogin,
+  sendViaWebAccount, getWebAccounts, logoutWebAccount,
+  checkGmailLoginStatus, checkOutlookLoginStatus,
+  logoutGmail, logoutOutlook, getAvailableProviders
+} from '../email/webEmailSender';
+import {
+  fetchVpnServers, connectVpnProxy, disconnectVpnProxy,
+  getPublicIp, getActiveProxy, getActiveCountry,
+  connectWarp, disconnectWarp, isConnected, WARP_COUNTRIES, downloadWireproxy
+} from '../vpn/vpnManager';
 
 const engine = new ExtractionEngine();
 
@@ -74,40 +85,18 @@ export function registerIpcHandlers() {
   ipcMain.handle('start-extraction', async (_event, config) => {
     const finalConfig = { ...config };
     if (config.proxyMode === 'rotating') {
-      // Pre-crawl proxy health check: verify proxies are actually alive
-      let proxies = db.getWorkingProxies();
+      db.addLog('Ensuring working proxies available before extraction...', 'info');
       
-      if (proxies.length > 0) {
-        db.addLog(`Testing ${proxies.length} stored proxies before crawl...`, 'info');
-        const liveProxies = await quickTestProxies(proxies);
-        // Delete any that failed — keep pool 100% clean
-        db.deleteFailedProxies();
-        
-        if (liveProxies.length === 0) {
-          db.addLog('All stored proxies are dead. Fetching fresh proxies...', 'warning');
-          await fetchFreeProxies();
-          const allProxies = db.getProxies().map((p: any) => p.address);
-          const freshLive = await quickTestProxies(allProxies.slice(0, 30));
-          db.deleteFailedProxies();
-          proxies = freshLive;
-        } else {
-          proxies = liveProxies;
-        }
+      // Always verify and replenish proxies before starting
+      const workingProxies = await ensureWorkingProxies(10);
+      
+      if (workingProxies.length > 0) {
+        finalConfig.proxies = workingProxies;
+        db.addLog(`${workingProxies.length} verified working proxies ready for extraction`, 'success');
       } else {
-        // No working proxies at all — fetch fresh ones
-        db.addLog('No proxies found. Fetching fresh free proxies...', 'info');
-        await fetchFreeProxies();
-        const allProxies = db.getProxies().map((p: any) => p.address);
-        proxies = await quickTestProxies(allProxies.slice(0, 30));
-        db.deleteFailedProxies();
+        db.addLog('Could not find working proxies — starting with direct connection', 'warning');
+        finalConfig.proxyMode = 'none';
       }
-
-      if (proxies.length > 0) {
-        db.addLog(`${proxies.length} live proxies ready for rotating engine`, 'success');
-      } else {
-        db.addLog('No live proxies available — starting engine with direct connection', 'warning');
-      }
-      finalConfig.proxies = proxies;
     } else {
       db.addLog('Starting extraction in direct mode (No proxies)', 'info');
     }
@@ -391,5 +380,246 @@ export function registerIpcHandlers() {
     if (rows.length === 0) return { error: 'No data found in file' };
     const columns = Object.keys(rows[0]);
     return { rows, columns };
+  });
+
+  // ─── Web Email Accounts (Gmail / Outlook browser login) ───────────────────
+
+  ipcMain.handle('open-gmail-login', async () => {
+    const workingProxies = db.getWorkingProxies();
+    const accounts = getWebAccounts();
+    const usedProxies = new Set(accounts.map((a: any) => a.proxy).filter(Boolean));
+    // Only use external proxies — never pass local VPN proxy to login browser
+    const activeVpn = getActiveProxy();
+    const isLocalVpn = activeVpn && activeVpn.includes('127.0.0.1');
+    const proxy = isLocalVpn ? undefined : (activeVpn || workingProxies.find(p => !usedProxies.has(p)) || undefined);
+    return await openGmailLogin(proxy);
+  });
+
+  ipcMain.handle('open-outlook-login', async () => {
+    const workingProxies = db.getWorkingProxies();
+    const accounts = getWebAccounts();
+    const usedProxies = new Set(accounts.map((a: any) => a.proxy).filter(Boolean));
+    const activeVpn = getActiveProxy();
+    const isLocalVpn = activeVpn && activeVpn.includes('127.0.0.1');
+    const proxy = isLocalVpn ? undefined : (activeVpn || workingProxies.find(p => !usedProxies.has(p)) || undefined);
+    return await openOutlookLogin(proxy);
+  });
+
+  ipcMain.handle('open-web-login', async (_event, { providerId, customUrl }: { providerId: string; customUrl?: string }) => {
+    // Use VPN proxy only if wireproxy is actually running (local SOCKS5 works)
+    // Use pool proxy only if it's an external proxy (not 127.0.0.1)
+    const activeVpn = getActiveProxy();
+    const isLocalVpn = activeVpn && activeVpn.includes('127.0.0.1');
+    const workingProxies = db.getWorkingProxies();
+    const accounts = getWebAccounts();
+    const usedProxies = new Set(accounts.map((a: any) => a.proxy).filter(Boolean));
+    const poolProxy = workingProxies.find(p => !usedProxies.has(p) && !p.includes('127.0.0.1')) || undefined;
+    // Only pass proxy if VPN is confirmed running OR we have a real external proxy
+    const proxy = (isLocalVpn && isConnected()) ? activeVpn : poolProxy;
+    return await openWebLogin(providerId, customUrl, proxy || undefined);
+  });
+
+  ipcMain.handle('get-available-providers', async () => {
+    return getAvailableProviders();
+  });
+
+  ipcMain.handle('get-web-accounts', async () => {
+    return getWebAccounts();
+  });
+
+  ipcMain.handle('check-web-login-status', async () => {
+    const accounts = getWebAccounts();
+    return {
+      gmail: accounts.some(a => a.provider === 'gmail'),
+      outlook: accounts.some(a => a.provider === 'outlook'),
+      accounts,
+    };
+  });
+
+  ipcMain.handle('logout-web-account', async (_event, id: string) => {
+    await logoutWebAccount(id);
+    return { success: true };
+  });
+
+  ipcMain.handle('logout-gmail', async () => { await logoutGmail(); return { success: true }; });
+  ipcMain.handle('logout-outlook', async () => { await logoutOutlook(); return { success: true }; });
+
+  // ─── VPN Manager ──────────────────────────────────────────────────────────
+
+  ipcMain.handle('fetch-vpn-servers', async () => {
+    return { servers: WARP_COUNTRIES };
+  });
+
+  ipcMain.handle('connect-vpn', async (_event, { countryCode }: { countryCode: string }) => {
+    return await connectWarp(countryCode);
+  });
+
+  ipcMain.handle('disconnect-vpn', async () => {
+    await disconnectWarp();
+    return { success: true };
+  });
+
+  ipcMain.handle('download-wireproxy', async () => {
+    return await downloadWireproxy();
+  });
+
+  ipcMain.handle('get-public-ip', async () => {
+    return await getPublicIp();
+  });
+
+  ipcMain.handle('get-active-vpn', async () => {
+    return { proxy: getActiveProxy(), country: getActiveCountry(), connected: isConnected() };
+  });
+
+  // Legacy handlers (keep for backward compat)
+  ipcMain.handle('fetch-vpn-servers-legacy', async () => fetchVpnServers());
+  ipcMain.handle('connect-vpn-proxy', async (_event, { ip, port, country }) => connectVpnProxy(ip, port, country));
+  ipcMain.handle('disconnect-vpn-proxy', async () => { disconnectVpnProxy(); return { success: true }; });
+
+  /**
+   * Web campaign: each account gets its own independent queue,
+   * sends one email every 60s, all accounts run in parallel.
+   * Results are written to mailing_logs DB and a CSV report is generated.
+   */
+  ipcMain.handle('start-web-campaign', async (_event, config: {
+    subject: string;
+    body: string;
+    recipients: string[];
+    mergeData?: Record<string, Record<string, string>>;
+    autoRephrase?: boolean;
+  }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    const accounts = getWebAccounts();
+    if (accounts.length === 0) return { success: false, error: 'No web accounts connected' };
+
+    const emit = (data: any) => {
+      if (win && !win.isDestroyed()) win.webContents.send('web-campaign-event', data);
+    };
+
+    const totalAccounts = accounts.length;
+    const queues: string[][] = accounts.map((_, i) =>
+      config.recipients.filter((_, ri) => ri % totalAccounts === i)
+    );
+
+    emit({
+      type: 'started',
+      message: `Web campaign: ${config.recipients.length} recipients | ${totalAccounts} account(s) | 60s per send per account`,
+    });
+
+    const applyMerge = (text: string, recipient: string, rowData?: Record<string, string>) => {
+      let t = text
+        .replace(/{email}/g, recipient)
+        .replace(/{domain}/g, recipient.split('@')[1] || '')
+        .replace(/{date}/g, new Date().toLocaleDateString());
+      if (rowData) {
+        for (const [col, val] of Object.entries(rowData)) {
+          const re = new RegExp(`\\{\\{${col.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}\\}`, 'gi');
+          t = t.replace(re, val);
+        }
+      }
+      return t;
+    };
+
+    // Tracking for report
+    const sentList: string[] = [];
+    const failedList: string[] = [];
+
+    await Promise.all(
+      accounts.map((account, accIdx) => {
+        const queue = queues[accIdx];
+        return (async () => {
+          for (let qi = 0; qi < queue.length; qi++) {
+            const recipient = queue[qi];
+            const rowData = config.mergeData?.[recipient];
+            let pSubject = applyMerge(config.subject, recipient, rowData);
+            let pBody    = applyMerge(config.body, recipient, rowData);
+
+            // Apply variations to bypass spam filters (Spintax and Auto-Rephrase)
+            pSubject = emailMailer.parseSpintax(pSubject);
+            pBody = emailMailer.parseSpintax(pBody);
+
+            if (config.autoRephrase) {
+              pSubject = emailMailer.autoRephrase(pSubject);
+              pBody = emailMailer.autoRephrase(pBody);
+            }
+
+            emit({ type: 'sending', message: `[${account.email}${account.proxy ? ' via proxy' : ''}] Sending to ${recipient}${rowData?.name ? ` (${rowData.name})` : ''} (${qi + 1}/${queue.length})...`, recipient, account: account.email });
+
+            const result = await sendViaWebAccount(account.id, recipient, pSubject, pBody);
+
+            if (result.success) {
+              sentList.push(recipient);
+              db.addMailingLog({
+                smtpId: null,
+                recipient,
+                subject: pSubject,
+                status: 'success',
+                deliveryLocation: 'Inbox',
+                statusDetails: `Sent via ${account.providerName} (${account.email})${rowData?.name ? ` to ${rowData.name}` : ''}${account.proxy ? ' | IP rotated' : ''}`,
+              });
+              emit({ type: 'sent', message: `[${account.email}] ✓ ${rowData?.name || recipient}`, recipient, account: account.email });
+            } else {
+              failedList.push(recipient);
+              db.addMailingLog({
+                smtpId: null,
+                recipient,
+                subject: pSubject,
+                status: 'error',
+                deliveryLocation: 'Blocked',
+                error: result.error,
+              });
+              emit({ type: 'error', message: `[${account.email}] ✗ ${rowData?.name || recipient}: ${result.error}`, recipient });
+            }
+
+            if (qi < queue.length - 1) {
+              // Random pick from [30, 45, 60, 75]s — unpredictable pattern beats spam detectors
+              const intervals = [30, 45, 60, 75];
+              const baseSeconds = intervals[Math.floor(Math.random() * intervals.length)];
+              const noise = Math.floor(Math.random() * 4000) - 2000; // ±2s noise
+              const waitMs = (baseSeconds * 1000) + noise;
+              emit({ type: 'waiting', message: `[${account.email}] ⏱ Next send in ${Math.round(waitMs / 1000)}s...` });
+              await new Promise(r => setTimeout(r, waitMs));
+            }
+          }
+        })();
+      })
+    );
+
+    // Generate CSV report
+    let reportPath = '';
+    try {
+      const dir = 'C:\\ProgramData\\TomXtractor\\Reports';
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      reportPath = require('path').join(dir, `web_campaign_report_${timestamp}.csv`);
+      const lines: string[] = [
+        'WEB CAMPAIGN REPORT',
+        `Subject,${config.subject}`,
+        `Date,${new Date().toLocaleString()}`,
+        `Accounts,${accounts.map(a => a.email).join(' | ')}`,
+        '',
+        'SUMMARY',
+        `Total,Sent,Failed`,
+        `${config.recipients.length},${sentList.length},${failedList.length}`,
+        '',
+        'SENT RECIPIENTS',
+        ...sentList.map(r => r),
+        '',
+        'FAILED RECIPIENTS',
+        ...failedList.map(r => r),
+      ];
+      fs.writeFileSync(reportPath, lines.join('\r\n'), 'utf-8');
+    } catch {}
+
+    const report = {
+      sent: sentList.length,
+      failed: failedList.length,
+      skipped: 0,
+      total: config.recipients.length,
+      reportPath,
+    };
+
+    emit({ type: 'complete', message: `✅ Web campaign complete — Sent: ${sentList.length} | Failed: ${failedList.length}`, report });
+    return { success: true, report };
   });
 }

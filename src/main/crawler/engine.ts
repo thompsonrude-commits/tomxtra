@@ -107,6 +107,7 @@ export class ExtractionEngine extends EventEmitter {
 
         const targetKeywords: string[] = activeRoles.length > 0
           ? activeRoles.flatMap(role => {
+              // Original roles
               if (role === 'ceo') return [`CEO ${kw}`, `Founder ${kw}`, `Managing Director ${kw}`];
               if (role === 'hr_managers') return [`HR Manager ${kw}`, `Human Resources ${kw}`];
               if (role === 'developers') return [`Software Engineer ${kw}`, `Developer ${kw}`];
@@ -114,6 +115,74 @@ export class ExtractionEngine extends EventEmitter {
               if (role === 'doctors') return [`Doctor ${kw}`, `Physician ${kw}`];
               if (role === 'lawyers') return [`Lawyer ${kw}`, `Attorney ${kw}`];
               if (role === 'marketing_execs') return [`Marketing Manager ${kw}`, `CMO ${kw}`];
+              // Job seekers & resume
+              if (role === 'jobseekers_active') return [`job seeker ${kw}`, `looking for work ${kw}`, `"open to work" ${kw}`];
+              if (role === 'resume_posters') return [`resume ${kw}`, `CV ${kw}`, `curriculum vitae ${kw}`];
+              if (role === 'career_changers') return [`career change ${kw}`, `transition career ${kw}`];
+              if (role === 'recent_graduates') return [`fresh graduate ${kw}`, `new graduate ${kw}`, `entry level ${kw}`];
+              if (role === 'remote_workers') return [`remote worker ${kw}`, `work from home ${kw}`, `remote job ${kw}`];
+              if (role === 'gig_workers') return [`freelancer ${kw}`, `contractor ${kw}`, `gig worker ${kw}`];
+              // Real estate
+              if (role === 'real_estate_agents') return [`real estate agent ${kw}`, `realtor ${kw}`, `property agent ${kw}`];
+              if (role === 'property_buyers') return [`property buyer ${kw}`, `home buyer ${kw}`, `house hunting ${kw}`];
+              if (role === 'landlords') return [`landlord ${kw}`, `property owner ${kw}`, `rental owner ${kw}`];
+              if (role === 'property_developers') return [`property developer ${kw}`, `real estate developer ${kw}`];
+              if (role === 'mortgage_brokers') return [`mortgage broker ${kw}`, `home loan ${kw}`];
+              if (role === 'property_managers') return [`property manager ${kw}`, `building manager ${kw}`];
+              // Business directors
+              if (role === 'ceo_founders') return [`CEO ${kw}`, `founder ${kw}`, `co-founder ${kw}`];
+              if (role === 'cfo') return [`CFO ${kw}`, `finance director ${kw}`, `chief financial officer ${kw}`];
+              if (role === 'cto_cio') return [`CTO ${kw}`, `CIO ${kw}`, `chief technology officer ${kw}`];
+              if (role === 'cmo') return [`CMO ${kw}`, `marketing director ${kw}`, `chief marketing officer ${kw}`];
+              if (role === 'board_directors') return [`board director ${kw}`, `board member ${kw}`];
+              if (role === 'vp_executives') return [`VP ${kw}`, `vice president ${kw}`, `executive ${kw}`];
+              if (role === 'business_owners') return [`business owner ${kw}`, `company owner ${kw}`, `entrepreneur ${kw}`];
+              if (role === 'managing_directors') return [`managing director ${kw}`, `MD ${kw}`, `general manager ${kw}`];
+              // Students & academic
+              if (role === 'university_students') return [`university student ${kw}`, `undergraduate ${kw}`, `site:.edu ${kw} student email`];
+              if (role === 'college_students') return [`college student ${kw}`, `polytechnic student ${kw}`];
+              if (role === 'phd_researchers') return [`PhD researcher ${kw}`, `doctoral student ${kw}`, `postgraduate ${kw}`];
+              if (role === 'professors') return [`professor ${kw}`, `lecturer ${kw}`, `associate professor ${kw}`];
+              if (role === 'school_teachers') return [`teacher ${kw}`, `secondary school teacher ${kw}`, `primary school teacher ${kw}`];
+              if (role === 'academic_admin') return [`university administrator ${kw}`, `school administrator ${kw}`];
+              if (role === 'student_unions') return [`student union ${kw}`, `student association ${kw}`];
+              if (role === 'training_centres') return [`training centre ${kw}`, `vocational training ${kw}`];
+              // Industry
+              if (role === 'manufacturing') return [`manufacturer ${kw}`, `factory ${kw}`, `production manager ${kw}`];
+              if (role === 'oil_gas') return [`oil company ${kw}`, `gas company ${kw}`, `petroleum ${kw}`];
+              if (role === 'agriculture') return [`farmer ${kw}`, `agricultural company ${kw}`, `agribusiness ${kw}`];
+              if (role === 'construction_industry') return [`construction company ${kw}`, `contractor ${kw}`, `civil engineer ${kw}`];
+              if (role === 'automotive') return [`car dealer ${kw}`, `automotive company ${kw}`, `auto dealer ${kw}`];
+              if (role === 'mining') return [`mining company ${kw}`, `mine manager ${kw}`];
+              if (role === 'textile_fashion') return [`fashion brand ${kw}`, `clothing manufacturer ${kw}`, `textile company ${kw}`];
+              if (role === 'food_beverage') return [`food company ${kw}`, `restaurant chain ${kw}`, `beverage company ${kw}`];
+              if (role === 'logistics') return [`logistics company ${kw}`, `shipping company ${kw}`, `supply chain ${kw}`];
+              if (role === 'energy_utilities') return [`energy company ${kw}`, `utility company ${kw}`, `power company ${kw}`];
+              // Professional services
+              if (role === 'accountants') return [`accountant ${kw}`, `CPA ${kw}`, `chartered accountant ${kw}`];
+              if (role === 'lawyers_attorneys') return [`lawyer ${kw}`, `attorney ${kw}`, `solicitor ${kw}`, `law firm ${kw}`];
+              if (role === 'architects') return [`architect ${kw}`, `architectural firm ${kw}`];
+              if (role === 'consultants') return [`consultant ${kw}`, `consulting firm ${kw}`, `advisor ${kw}`];
+              if (role === 'financial_advisors') return [`financial advisor ${kw}`, `investment advisor ${kw}`, `wealth manager ${kw}`];
+              if (role === 'insurance_agents') return [`insurance agent ${kw}`, `insurance broker ${kw}`];
+              if (role === 'it_professionals') return [`IT professional ${kw}`, `systems analyst ${kw}`, `network engineer ${kw}`];
+              if (role === 'hr_professionals') return [`HR professional ${kw}`, `recruitment consultant ${kw}`, `talent acquisition ${kw}`];
+              if (role === 'pr_media') return [`PR manager ${kw}`, `media relations ${kw}`, `journalist ${kw}`];
+              if (role === 'event_planners') return [`event planner ${kw}`, `event manager ${kw}`, `wedding planner ${kw}`];
+              // Healthcare
+              if (role === 'physicians') return [`doctor ${kw}`, `physician ${kw}`, `general practitioner ${kw}`];
+              if (role === 'surgeons') return [`surgeon ${kw}`, `surgical specialist ${kw}`];
+              if (role === 'dentists') return [`dentist ${kw}`, `dental clinic ${kw}`];
+              if (role === 'pharmacists') return [`pharmacist ${kw}`, `pharmacy ${kw}`];
+              if (role === 'nurses_professional') return [`nurse ${kw}`, `registered nurse ${kw}`, `nursing staff ${kw}`];
+              if (role === 'physiotherapists') return [`physiotherapist ${kw}`, `physical therapist ${kw}`];
+              if (role === 'psychologists') return [`psychologist ${kw}`, `therapist ${kw}`, `mental health ${kw}`];
+              if (role === 'hospital_admins') return [`hospital administrator ${kw}`, `clinic manager ${kw}`];
+              // Religious & community
+              if (role === 'churches') return [`church ${kw}`, `mosque ${kw}`, `religious organisation ${kw}`];
+              if (role === 'community_leaders') return [`community leader ${kw}`, `community organisation ${kw}`];
+              if (role === 'ngo_charities') return [`NGO ${kw}`, `charity ${kw}`, `nonprofit ${kw}`];
+              if (role === 'political_orgs') return [`political party ${kw}`, `political organisation ${kw}`];
               return [`${role} ${kw}`];
             })
           : [kw];
@@ -176,7 +245,8 @@ export class ExtractionEngine extends EventEmitter {
 
       const getNextProxy = () => {
         if (!config.proxies || config.proxies.length === 0) return null;
-        const proxy = config.proxies[this.currentProxyIndex];
+        if (config.proxyMode === 'none') return null;
+        const proxy = config.proxies[this.currentProxyIndex % config.proxies.length];
         this.currentProxyIndex = (this.currentProxyIndex + 1) % config.proxies.length;
         return proxy;
       };
@@ -195,18 +265,32 @@ export class ExtractionEngine extends EventEmitter {
               await browser.close(); 
             } catch {}
           }
-          currentProxy = config.proxyMode === 'rotating' ? getNextProxy() : null;
+          
+          currentProxy = (config.proxyMode === 'rotating' && config.proxies && config.proxies.length > 0) 
+            ? getNextProxy() 
+            : null;
           
           const args = [
             '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
             '--disable-blink-features=AutomationControlled',
-            '--disable-features=IsolateOrigins,site-per-process'
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--lang=en-US',
+            '--accept-lang=en-US,en;q=0.9',
           ];
           
           if (currentProxy) {
-            const proxyHost = currentProxy.replace(/^https?:\/\//, '').split('@').pop();
-            args.push(`--proxy-server=${proxyHost}`);
-            addLog(`Worker ${workerId + 1} using proxy: ${proxyHost}`, 'info');
+            let proxyArg: string;
+            if (currentProxy.startsWith('socks5://')) {
+              proxyArg = currentProxy;
+            } else {
+              proxyArg = currentProxy.replace(/^https?:\/\//, '');
+              const atIdx = proxyArg.lastIndexOf('@');
+              if (atIdx !== -1) proxyArg = proxyArg.substring(atIdx + 1);
+            }
+            args.push(`--proxy-server=${proxyArg}`);
+            addLog(`Worker ${workerId + 1} using proxy: ${proxyArg}`, 'info');
+          } else {
+            addLog(`Worker ${workerId + 1} using direct connection`, 'info');
           }
 
           browser = await puppeteer.launch({
@@ -248,28 +332,37 @@ export class ExtractionEngine extends EventEmitter {
               const success = await this.crawlWorkerPage(url, config.timeout, config.depth, 0, browser, currentProxy);
               if (!success && config.proxyMode === 'rotating') {
                 addLog(`Worker ${workerId + 1} blocked or failed. Rotating proxy...`, 'warning');
-                // Remove dead proxy from pool and DB
                 if (currentProxy) {
                   config.proxies = (config.proxies || []).filter(p => p !== currentProxy);
                   updateProxyStatus(currentProxy, false, 0);
                   deleteFailedProxies();
                 }
+                // If proxy pool exhausted, fall back to direct connection
+                if (!config.proxies || config.proxies.length === 0) {
+                  addLog(`All proxies exhausted — switching to direct connection`, 'warning');
+                  config.proxyMode = 'none';
+                }
                 await launchWorkerBrowser();
               }
             } catch (err: any) {
               addLog(`Worker ${workerId + 1} exception: ${err.message}. Restarting browser...`, 'error');
-              // Remove proxy on auth/tunnel/connection errors
               if (currentProxy && (
                 err.message?.includes('ERR_INVALID_AUTH_CREDENTIALS') ||
                 err.message?.includes('ERR_TUNNEL_CONNECTION_FAILED') ||
                 err.message?.includes('ERR_CONNECTION_RESET') ||
                 err.message?.includes('ERR_TIMED_OUT') ||
-                err.message?.includes('ERR_PROXY')
+                err.message?.includes('ERR_PROXY') ||
+                err.message?.includes('ERR_SOCKS') ||
+                err.message?.includes('ERR_EMPTY_RESPONSE')
               )) {
                 config.proxies = (config.proxies || []).filter(p => p !== currentProxy);
                 updateProxyStatus(currentProxy, false, 0);
                 deleteFailedProxies();
                 addLog(`Proxy ${currentProxy} removed from pool (connection error)`, 'warning');
+                if (!config.proxies || config.proxies.length === 0) {
+                  addLog(`All proxies exhausted — switching to direct connection`, 'warning');
+                  config.proxyMode = 'none';
+                }
               }
               await launchWorkerBrowser();
             }

@@ -864,6 +864,186 @@ export const Extract: React.FC = () => {
                           ))}
                         </div>
                       </CollapsibleSection>
+
+                      {/* ── NEW PRECISION CATEGORIES ── */}
+                      <CollapsibleSection title="🎯 Job Seekers & Resume" titleClass="text-orange-400">
+                        <p className="text-[9px] text-gray-600 mb-2">Targets job boards, resume databases, career sites</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { id: 'jobseekers_active', label: 'Active Job Seekers' },
+                            { id: 'resume_posters', label: 'Resume Posters' },
+                            { id: 'career_changers', label: 'Career Changers' },
+                            { id: 'recent_graduates', label: 'Recent Graduates' },
+                            { id: 'remote_workers', label: 'Remote Workers' },
+                            { id: 'gig_workers', label: 'Gig/Contract Workers' },
+                          ]).map((r) => (
+                            <label key={r.id} className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">
+                              <input type="checkbox" checked={config.roles?.includes(r.id)}
+                                onChange={(e) => { const roles = e.target.checked ? [...(config.roles||[]),r.id] : (config.roles||[]).filter(x=>x!==r.id); setConfig({...config,roles}); }}
+                                className="rounded bg-cyber-bg border-gray-700 text-orange-400 focus:ring-0" />
+                              {r.label}
+                            </label>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection title="🏠 Real Estate" titleClass="text-yellow-400">
+                        <p className="text-[9px] text-gray-600 mb-2">Targets property listings, agent directories, real estate platforms</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { id: 'real_estate_agents', label: 'RE Agents' },
+                            { id: 'property_buyers', label: 'Property Buyers' },
+                            { id: 'landlords', label: 'Landlords' },
+                            { id: 'property_developers', label: 'Developers' },
+                            { id: 'mortgage_brokers', label: 'Mortgage Brokers' },
+                            { id: 'property_managers', label: 'Property Managers' },
+                          ]).map((r) => (
+                            <label key={r.id} className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">
+                              <input type="checkbox" checked={config.roles?.includes(r.id)}
+                                onChange={(e) => { const roles = e.target.checked ? [...(config.roles||[]),r.id] : (config.roles||[]).filter(x=>x!==r.id); setConfig({...config,roles}); }}
+                                className="rounded bg-cyber-bg border-gray-700 text-yellow-400 focus:ring-0" />
+                              {r.label}
+                            </label>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection title="👔 Business Directors & C-Suite" titleClass="text-purple-400">
+                        <p className="text-[9px] text-gray-600 mb-2">Targets company registries, LinkedIn, business directories</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { id: 'ceo_founders', label: 'CEO / Founders' },
+                            { id: 'cfo', label: 'CFO / Finance Directors' },
+                            { id: 'cto_cio', label: 'CTO / CIO' },
+                            { id: 'cmo', label: 'CMO / Marketing Directors' },
+                            { id: 'board_directors', label: 'Board Directors' },
+                            { id: 'vp_executives', label: 'VP / Executives' },
+                            { id: 'business_owners', label: 'Business Owners' },
+                            { id: 'managing_directors', label: 'Managing Directors' },
+                          ]).map((r) => (
+                            <label key={r.id} className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">
+                              <input type="checkbox" checked={config.roles?.includes(r.id)}
+                                onChange={(e) => { const roles = e.target.checked ? [...(config.roles||[]),r.id] : (config.roles||[]).filter(x=>x!==r.id); setConfig({...config,roles}); }}
+                                className="rounded bg-cyber-bg border-gray-700 text-purple-400 focus:ring-0" />
+                              {r.label}
+                            </label>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection title="🎓 Students & Academic Institutions" titleClass="text-blue-400">
+                        <p className="text-[9px] text-gray-600 mb-2">Targets university directories, student portals, academic databases</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { id: 'university_students', label: 'University Students' },
+                            { id: 'college_students', label: 'College Students' },
+                            { id: 'phd_researchers', label: 'PhD Researchers' },
+                            { id: 'professors', label: 'Professors / Lecturers' },
+                            { id: 'school_teachers', label: 'School Teachers' },
+                            { id: 'academic_admin', label: 'Academic Admin' },
+                            { id: 'student_unions', label: 'Student Unions' },
+                            { id: 'training_centres', label: 'Training Centres' },
+                          ]).map((r) => (
+                            <label key={r.id} className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">
+                              <input type="checkbox" checked={config.roles?.includes(r.id)}
+                                onChange={(e) => { const roles = e.target.checked ? [...(config.roles||[]),r.id] : (config.roles||[]).filter(x=>x!==r.id); setConfig({...config,roles}); }}
+                                className="rounded bg-cyber-bg border-gray-700 text-blue-400 focus:ring-0" />
+                              {r.label}
+                            </label>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection title="🏭 Industry Specific" titleClass="text-red-400">
+                        <p className="text-[9px] text-gray-600 mb-2">Targets industry associations, trade bodies, sector databases</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { id: 'manufacturing', label: 'Manufacturing' },
+                            { id: 'oil_gas', label: 'Oil & Gas' },
+                            { id: 'agriculture', label: 'Agriculture' },
+                            { id: 'construction_industry', label: 'Construction' },
+                            { id: 'automotive', label: 'Automotive' },
+                            { id: 'mining', label: 'Mining' },
+                            { id: 'textile_fashion', label: 'Textile / Fashion' },
+                            { id: 'food_beverage', label: 'Food & Beverage' },
+                            { id: 'logistics', label: 'Logistics / Supply Chain' },
+                            { id: 'energy_utilities', label: 'Energy / Utilities' },
+                          ]).map((r) => (
+                            <label key={r.id} className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">
+                              <input type="checkbox" checked={config.roles?.includes(r.id)}
+                                onChange={(e) => { const roles = e.target.checked ? [...(config.roles||[]),r.id] : (config.roles||[]).filter(x=>x!==r.id); setConfig({...config,roles}); }}
+                                className="rounded bg-cyber-bg border-gray-700 text-red-400 focus:ring-0" />
+                              {r.label}
+                            </label>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection title="💼 Professional Services" titleClass="text-teal-400">
+                        <p className="text-[9px] text-gray-600 mb-2">Targets professional associations, certification bodies, service directories</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { id: 'accountants', label: 'Accountants / CPAs' },
+                            { id: 'lawyers_attorneys', label: 'Lawyers / Attorneys' },
+                            { id: 'architects', label: 'Architects' },
+                            { id: 'consultants', label: 'Consultants' },
+                            { id: 'financial_advisors', label: 'Financial Advisors' },
+                            { id: 'insurance_agents', label: 'Insurance Agents' },
+                            { id: 'it_professionals', label: 'IT Professionals' },
+                            { id: 'hr_professionals', label: 'HR Professionals' },
+                            { id: 'pr_media', label: 'PR & Media' },
+                            { id: 'event_planners', label: 'Event Planners' },
+                          ]).map((r) => (
+                            <label key={r.id} className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">
+                              <input type="checkbox" checked={config.roles?.includes(r.id)}
+                                onChange={(e) => { const roles = e.target.checked ? [...(config.roles||[]),r.id] : (config.roles||[]).filter(x=>x!==r.id); setConfig({...config,roles}); }}
+                                className="rounded bg-cyber-bg border-gray-700 text-teal-400 focus:ring-0" />
+                              {r.label}
+                            </label>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection title="🏥 Healthcare Professionals" titleClass="text-pink-400">
+                        <p className="text-[9px] text-gray-600 mb-2">Targets medical directories, hospital staff lists, health associations</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { id: 'physicians', label: 'Physicians / GPs' },
+                            { id: 'surgeons', label: 'Surgeons' },
+                            { id: 'dentists', label: 'Dentists' },
+                            { id: 'pharmacists', label: 'Pharmacists' },
+                            { id: 'nurses_professional', label: 'Nurses' },
+                            { id: 'physiotherapists', label: 'Physiotherapists' },
+                            { id: 'psychologists', label: 'Psychologists' },
+                            { id: 'hospital_admins', label: 'Hospital Admins' },
+                          ]).map((r) => (
+                            <label key={r.id} className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">
+                              <input type="checkbox" checked={config.roles?.includes(r.id)}
+                                onChange={(e) => { const roles = e.target.checked ? [...(config.roles||[]),r.id] : (config.roles||[]).filter(x=>x!==r.id); setConfig({...config,roles}); }}
+                                className="rounded bg-cyber-bg border-gray-700 text-pink-400 focus:ring-0" />
+                              {r.label}
+                            </label>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
+
+                      <CollapsibleSection title="⛪ Religious & Community" titleClass="text-amber-400">
+                        <div className="grid grid-cols-2 gap-2">
+                          {([
+                            { id: 'churches', label: 'Churches / Mosques' },
+                            { id: 'community_leaders', label: 'Community Leaders' },
+                            { id: 'ngo_charities', label: 'NGOs / Charities' },
+                            { id: 'political_orgs', label: 'Political Orgs' },
+                          ]).map((r) => (
+                            <label key={r.id} className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:text-gray-200 transition-colors">
+                              <input type="checkbox" checked={config.roles?.includes(r.id)}
+                                onChange={(e) => { const roles = e.target.checked ? [...(config.roles||[]),r.id] : (config.roles||[]).filter(x=>x!==r.id); setConfig({...config,roles}); }}
+                                className="rounded bg-cyber-bg border-gray-700 text-amber-400 focus:ring-0" />
+                              {r.label}
+                            </label>
+                          ))}
+                        </div>
+                      </CollapsibleSection>
                     </div>
                   </div>
                 </div>

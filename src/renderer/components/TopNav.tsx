@@ -28,11 +28,14 @@ export const TopNav: React.FC<TopNavProps> = ({ onNavigate, currentPage, license
           <path d="M2 17l10 5 10-5" />
           <path d="M2 12l10 5 10-5" />
         </svg>
-        <span className="text-base font-black text-green-500 glow-text tracking-tight whitespace-nowrap">
-          Tom<span className="text-white">X</span>tractor
+        <span className="text-base font-black tracking-tight whitespace-nowrap flex items-center">
+          <span className="rainbow-text">Obo</span>
+          <span className="rainbow-text" style={{ display: 'inline-block', animation: 'rainbowShift 3s linear infinite' }}>X</span>
+          <span className="rainbow-text">a</span>
+          <span className="rainbow-text ml-1">Ultra</span>
         </span>
         <span className="text-[10px] text-gray-400 font-mono bg-gray-800/50 px-1.5 py-0.5 rounded border border-gray-700 whitespace-nowrap">
-          v1.0.12
+          v1.0.13
         </span>
       </div>
 

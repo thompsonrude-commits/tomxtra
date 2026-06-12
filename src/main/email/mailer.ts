@@ -12,6 +12,8 @@ interface MailerConfig {
   recipients: string[];
   autoRephrase?: boolean;
   attachments?: { filename: string; path: string }[];
+  /** Optional per-recipient merge data keyed by email address */
+  mergeData?: Record<string, Record<string, string>>;
 }
 
 interface CampaignRecord {
@@ -50,47 +52,49 @@ export class EmailMailer extends EventEmitter {
     const getProxy = (idx: number): string | null =>
       workingProxies.length > 0 ? workingProxies[idx % workingProxies.length] : null;
 
-    // Wave-based sending: each wave sends one email per SMTP simultaneously
-    // Wave 1: SMTP1→recipient1, SMTP2→recipient2, SMTP3→recipient3 (all at same time)
-    // Wait 60s
-    // Wave 2: SMTP1→recipient4, SMTP2→recipient5, SMTP3→recipient6 (all at same time)
-    const waves: string[][] = [];
-    for (let i = 0; i < config.recipients.length; i += smtps.length) {
-      waves.push(config.recipients.slice(i, i + smtps.length));
-    }
+    // Each SMTP gets its own slice of recipients and sends one every 60 seconds independently.
+    // SMTP1 → recipient1, wait 60s, recipient4, wait 60s, recipient7 ...
+    // SMTP2 → recipient2, wait 60s, recipient5, wait 60s, recipient8 ... (runs in parallel)
+    // SMTP3 → recipient3, wait 60s, recipient6, wait 60s, recipient9 ... (runs in parallel)
+    const totalSmtps = smtps.length;
+    const smtpQueues: string[][] = smtps.map((_, i) =>
+      config.recipients.filter((_, ri) => ri % totalSmtps === i)
+    );
 
     this.emit('event', {
       type: 'started',
-      message: `Campaign started: ${config.recipients.length} recipients | ${smtps.length} SMTP(s) | ${waves.length} wave(s) | All SMTPs fire simultaneously every 60s`
+      message: `Campaign started: ${config.recipients.length} recipients | ${totalSmtps} SMTP(s) | 60s delay per send per SMTP`
     });
 
-    for (let waveIdx = 0; waveIdx < waves.length; waveIdx++) {
-      if (this.shouldStop) break;
-
-      const wave = waves[waveIdx];
-      this.emit('event', {
-        type: 'started',
-        message: `⚡ Wave ${waveIdx + 1}/${waves.length} — firing ${wave.filter(Boolean).length} email(s) simultaneously...`
-      });
-
-      // All SMTPs in this wave fire at exactly the same time
-      await Promise.all(
-        wave.map((recipient, smtpIdx) => {
-          const smtp = smtps[smtpIdx];
-          if (!smtp || !recipient) return Promise.resolve();
-          return this.sendOneEmail(smtp, recipient, config, getProxy(smtpIdx));
-        })
-      );
-
-      // Wait 60 seconds before next wave
-      if (waveIdx < waves.length - 1 && !this.shouldStop) {
-        this.emit('event', {
-          type: 'waiting',
-          message: `⏱ Wave ${waveIdx + 1} complete. Waiting 60s before wave ${waveIdx + 2}...`
-        });
-        await new Promise(r => setTimeout(r, 60000));
-      }
-    }
+    // Run all SMTP queues in parallel; each queue sends one email then waits 60s before the next
+    await Promise.all(
+      smtps.map((smtp, smtpIdx) => {
+        const queue = smtpQueues[smtpIdx];
+        return (async () => {
+          for (let qi = 0; qi < queue.length; qi++) {
+            if (this.shouldStop) break;
+            const recipient = queue[qi];
+            this.emit('event', {
+              type: 'started',
+              message: `[${smtp.user}] Sending to ${recipient} (${qi + 1}/${queue.length})...`
+            });
+            await this.sendOneEmail(smtp, recipient, config, getProxy(smtpIdx));
+            // Wait using random interval from [30, 45, 60, 75]s to beat spam detectors
+            if (qi < queue.length - 1 && !this.shouldStop) {
+              const intervals = [30, 45, 60, 75];
+              const baseSeconds = intervals[Math.floor(Math.random() * intervals.length)];
+              const noise = Math.floor(Math.random() * 4000) - 2000; // ±2s noise
+              const waitMs = (baseSeconds * 1000) + noise;
+              this.emit('event', {
+                type: 'waiting',
+                message: `[${smtp.user}] ⏱ Next send in ${Math.round(waitMs / 1000)}s...`
+              });
+              await new Promise(r => setTimeout(r, waitMs));
+            }
+          }
+        })();
+      })
+    );
 
     this.running = false;
 
@@ -122,6 +126,17 @@ export class EmailMailer extends EventEmitter {
 
       let personalizedSubject = this.replacePlaceholders(config.subject, recipient);
       let personalizedBody    = this.replacePlaceholders(config.body, recipient);
+
+      // Apply mail merge column data ({{name}}, {{company}}, {{position}}, etc.)
+      if (config.mergeData?.[recipient]) {
+        const rowData = config.mergeData[recipient];
+        for (const [col, value] of Object.entries(rowData)) {
+          const colRegex = new RegExp(`\\{\\{${col.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}\\}`, 'gi');
+          personalizedSubject = personalizedSubject.replace(colRegex, value);
+          personalizedBody    = personalizedBody.replace(colRegex, value);
+        }
+      }
+
       personalizedSubject = this.parseSpintax(personalizedSubject);
       personalizedBody    = this.parseSpintax(personalizedBody);
       if (config.autoRephrase) {
@@ -215,7 +230,7 @@ export class EmailMailer extends EventEmitter {
       .replace(/{date}/g, date);
   }
 
-  private parseSpintax(text: string): string {
+  public parseSpintax(text: string): string {
     const spintaxRegex = /{([^{}]+)}/g;
     let match;
     let result = text;
@@ -228,7 +243,7 @@ export class EmailMailer extends EventEmitter {
     return result;
   }
 
-  private autoRephrase(text: string): string {
+  public autoRephrase(text: string): string {
     const synonymGroups = [
       ['Hello', 'Hi', 'Greetings', 'Dear', 'Hey'],
       ['interested in', 'looking for', 'inquiring about', 'following up on'],
@@ -326,8 +341,10 @@ export class EmailMailer extends EventEmitter {
       text: textContent,
       html: htmlContent,
       headers: {
-        'List-Unsubscribe': `<mailto:${actualFromEmail}?subject=unsubscribe>`,
-        'Precedence': 'bulk'
+        'X-Mailer': 'Microsoft Outlook 16.0',
+        'X-Priority': '3',
+        'Importance': 'Normal',
+        'MIME-Version': '1.0'
       },
       attachments: attachments?.map(att => ({ filename: att.filename, path: att.path }))
     });

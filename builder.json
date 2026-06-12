@@ -41,6 +41,7 @@
   "asar": true,
   "asarUnpack": [
     "node_modules/sql.js/**",
-    "node_modules/chromium/**"
+    "node_modules/chromium/**",
+    "resources/wireproxy.exe"
   ]
 }

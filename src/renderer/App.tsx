@@ -9,6 +9,7 @@ import { ExportManager } from './pages/ExportManager';
 import { Settings } from './pages/Settings';
 import { ActivityLogs } from './pages/ActivityLogs';
 import { Mailer } from './pages/Mailer';
+import { VpnManager } from './pages/VpnManager';
 import { Activation } from './pages/Activation';
 import { LicenseStatus } from './types';
 
@@ -39,13 +40,14 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <div className="h-screen bg-cyber-bg flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl font-bold glow-text mb-4">
-            <span className="text-green-500">Tom</span>
-            <span className="text-white">X</span>
-            <span className="text-green-500">tractor</span>
+        <div className="text-center select-none">
+          <div className="text-5xl font-black mb-4 tracking-tight flex items-center justify-center">
+            <span className="oboxa-prefix rainbow-text">Obo</span>
+            <span className="x-spin-entrance rainbow-text">X</span>
+            <span className="oboxa-prefix rainbow-text" style={{ animationDelay: '0.15s' }}>a</span>
+            <span className="ultra-suffix rainbow-text ml-2">Ultra</span>
           </div>
-          <div className="text-xl text-cyber-text/70 animate-pulse">Loading...</div>
+          <div className="text-sm text-cyber-text/50 animate-pulse tracking-widest uppercase">Loading...</div>
         </div>
       </div>
     );
@@ -69,6 +71,7 @@ const App: React.FC = () => {
         case 'verify':
         case 'duplicate-cleaner': return <Verify />;
         case 'proxy-manager': return <ProxyManager />;
+        case 'vpn-manager': return <VpnManager />;
         case 'mailer': 
         case 'mailer-section':
         case 'email-sender': 

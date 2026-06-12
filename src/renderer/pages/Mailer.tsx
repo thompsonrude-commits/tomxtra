@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GlowButton } from '../components/GlowButton';
 import { MailMerge } from '../components/MailMerge';
-import { Mail, Loader2, Play, Square, Plus, Trash2, CheckCircle2, AlertCircle, Clock, AlertTriangle, Paperclip, GitMerge, X } from 'lucide-react';
+import { Mail, Loader2, Play, Square, Plus, Trash2, CheckCircle2, AlertCircle, Clock, AlertTriangle, Paperclip, GitMerge, X, LogIn } from 'lucide-react';
 import { RichTextEditor } from '../components/RichTextEditor';
 
 interface SmtpAccount {
@@ -53,6 +53,17 @@ export const Mailer: React.FC = () => {
   const [autoSyncVerified, setAutoSyncVerified] = useState(false);
   const [showMailMerge, setShowMailMerge] = useState(false);
   const [mailMergeRecipients, setMailMergeRecipients] = useState<{ email: string; data: Record<string, string> }[] | null>(null);
+
+  // Web email accounts (Gmail / Outlook browser login) — multi-account
+  const [webAccounts, setWebAccounts] = useState<{ id: string; provider: string; providerName?: string; email: string }[]>([]);
+  const [webLoginLoading, setWebLoginLoading] = useState<string | null>(null);
+  const [webCampaignRunning, setWebCampaignRunning] = useState(false);
+  const [webCampaignStatus, setWebCampaignStatus] = useState('Idle');
+  const [selectedProvider, setSelectedProvider] = useState('gmail');
+  const [customWebmailUrl, setCustomWebmailUrl] = useState('');
+
+  // Sender panel tab
+  const [senderTab, setSenderTab] = useState<'web' | 'smtp'>('web');
 
   const SPAM_TRIGGER_WORDS = [
     'free', 'win', 'winner', 'cash', 'money', 'urgent', 'act now', 'guarantee',
@@ -121,6 +132,23 @@ export const Mailer: React.FC = () => {
             else if (data.type === 'waiting') { setStatus('Waiting (1 min)...'); }
             else if (data.type === 'error') { setStatus(`Error: ${data.message || 'Unknown error'}`); loadData(); }
           });
+
+          // Load saved web accounts and subscribe to web campaign events
+          try {
+            const status = await (window.electronAPI as any).checkWebLoginStatus?.();
+            if (status?.accounts) setWebAccounts(status.accounts);
+          } catch {}
+          try {
+            (window.electronAPI as any).onWebCampaignEvent?.((_ev: any, data: any) => {
+              if (!data) return;
+              if (data.type === 'started') { setWebCampaignRunning(true); setWebCampaignStatus('Sending...'); }
+              else if (data.type === 'complete') { setWebCampaignRunning(false); setWebCampaignStatus('Complete'); loadData(); if (data.report) setCampaignReport(data.report); }
+              else if (data.type === 'sent') { setWebCampaignStatus(`✓ ${data.recipient}`); loadData(); }
+              else if (data.type === 'waiting') setWebCampaignStatus('Waiting 60s...');
+              else if (data.type === 'error') { setWebCampaignStatus(`✗ ${data.message}`); loadData(); }
+              else if (data.type === 'sending') setWebCampaignStatus(data.message);
+            });
+          } catch {}
         }
       } catch (err: any) {
         console.error('Mailer initialization error:', err);
@@ -154,6 +182,54 @@ export const Mailer: React.FC = () => {
         console.error('Failed to load Mailer data:', err);
       }
     }
+  };
+
+  const handleConnectGmail = async () => {
+    setWebLoginLoading('gmail');
+    try {
+      const result = await (window.electronAPI as any).openGmailLogin?.();
+      if (result) setWebAccounts(prev => [...prev, result]);
+    } catch (err: any) { alert('Gmail login failed: ' + err.message); }
+    setWebLoginLoading(null);
+  };
+
+  const handleConnectOutlook = async () => {
+    setWebLoginLoading('outlook');
+    try {
+      const result = await (window.electronAPI as any).openOutlookLogin?.();
+      if (result) setWebAccounts(prev => [...prev, result]);
+    } catch (err: any) { alert('Outlook login failed: ' + err.message); }
+    setWebLoginLoading(null);
+  };
+
+  const handleConnectWebAccount = async () => {
+    setWebLoginLoading(selectedProvider);
+    try {
+      const customUrl = selectedProvider === 'webmail' ? customWebmailUrl : undefined;
+      if (selectedProvider === 'webmail' && !customUrl) {
+        alert('Please enter the webmail URL first.');
+        setWebLoginLoading(null);
+        return;
+      }
+      const result = await (window.electronAPI as any).openWebLogin?.({ providerId: selectedProvider, customUrl });
+      if (result) setWebAccounts(prev => [...prev, result]);
+    } catch (err: any) { alert('Login failed: ' + err.message); }
+    setWebLoginLoading(null);
+  };
+
+  const handleLogoutWebAccount = async (id: string) => {
+    await (window.electronAPI as any).logoutWebAccount?.(id);
+    setWebAccounts(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handleLogoutGmail = async () => {
+    await (window.electronAPI as any).logoutGmail?.();
+    setWebAccounts(prev => prev.filter(a => a.provider !== 'gmail'));
+  };
+
+  const handleLogoutOutlook = async () => {
+    await (window.electronAPI as any).logoutOutlook?.();
+    setWebAccounts(prev => prev.filter(a => a.provider !== 'outlook'));
   };
 
   const handleAddSmtp = async () => {
@@ -196,8 +272,12 @@ export const Mailer: React.FC = () => {
   };
 
   const handleStartCampaign = async () => {
-    if (smtps.length === 0) {
-      alert('Please add at least one SMTP account');
+    if (senderTab === 'smtp' && smtps.length === 0) {
+      alert('Please add at least one SMTP account in the SMTP tab');
+      return;
+    }
+    if (senderTab === 'web' && webAccounts.length === 0) {
+      alert('Please connect at least one web account in the Web Login tab');
       return;
     }
     if (!subject || !body) {
@@ -235,13 +315,44 @@ export const Mailer: React.FC = () => {
     }
 
     if (window.electronAPI) {
-      await window.electronAPI.startMailing({
-        subject,
-        body,
-        recipients: recipientList,
-        autoRephrase,
-        attachments
-      });
+      // Build per-recipient merge data map if in mail merge mode
+      const mergeData: Record<string, Record<string, string>> | undefined =
+        mailMergeRecipients && mailMergeRecipients.length > 0
+          ? Object.fromEntries(
+              mailMergeRecipients
+                .filter(r => r.email?.includes('@'))
+                .map(r => [r.email, r.data])
+            )
+          : undefined;
+
+      // ── Send based on the active sender tab ──────────────────────────────────
+      // Web Login tab → use web accounts only
+      // SMTP tab → use SMTP only
+      // This prevents Chrome from opening when user is working in SMTP mode
+
+      if (senderTab === 'web') {
+        if (webAccounts.length === 0) {
+          alert('No web accounts connected. Please connect an account in the Web Login tab first.');
+          return;
+        }
+        setWebCampaignRunning(true);
+        setWebCampaignStatus('Starting...');
+        (window.electronAPI as any).startWebCampaign?.({ subject, body, recipients: recipientList, mergeData, autoRephrase });
+      } else {
+        // SMTP tab
+        if (smtps.length === 0) {
+          alert('No SMTP accounts configured. Please add an SMTP account first.');
+          return;
+        }
+        await window.electronAPI.startMailing({
+          subject,
+          body,
+          recipients: recipientList,
+          autoRephrase,
+          attachments,
+          mergeData,
+        });
+      }
     }
   };
 
@@ -317,7 +428,7 @@ export const Mailer: React.FC = () => {
             <Mail className="text-cyber-accent" />
             Email Sender
           </h1>
-          <p className="text-sm text-gray-400 mt-1">Send campaigns with auto-rotation (1 email per minute)</p>
+          <p className="text-sm text-gray-400 mt-1">Send campaigns with humanized auto-rotation delays</p>
         </div>
         <div className="flex items-center gap-3">
             <button
@@ -335,135 +446,403 @@ export const Mailer: React.FC = () => {
                 </button>
               </div>
             )}
-            <button 
-            onClick={handleClearMemory}
-            className="px-3 py-1 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg text-xs hover:bg-red-500/20 transition-all flex items-center gap-1.5"
-            title="Remove all saved SMTP accounts"
-          >
-            <Trash2 size={12} /> Clear All SMTPs
-          </button>
-          <div className={`px-3 py-1 rounded-full text-xs font-medium border ${
-            isRunning ? 'bg-green-500/10 border-green-500/50 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-500'
+            <div className={`px-3 py-1 rounded-full text-xs font-medium border ${
+            isRunning || webCampaignRunning ? 'bg-green-500/10 border-green-500/50 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-500'
           }`}>
-            Status: {status}
+            {webCampaignRunning ? `Web: ${webCampaignStatus}` : `Status: ${status}`}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* SMTP Configuration */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-cyber-card rounded-xl border border-gray-700/50 p-5 space-y-4">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-bold text-cyber-accent uppercase flex items-center gap-2">
-                <Plus size={16} /> Add SMTP Account
-              </h3>
-              <button 
-                onClick={() => setNewSmtp({...newSmtp, host: 'smtp.gmail.com', port: 587, secure: false})}
-                className="text-[10px] text-gray-400 hover:text-cyber-accent border border-gray-700 hover:border-cyber-accent/50 px-2 py-0.5 rounded transition-all"
+        {/* ── Senders Panel (tabbed: Web Login | SMTP) ── */}
+        <div className="lg:col-span-1 space-y-4">
+          <div className="bg-cyber-card rounded-xl border border-gray-700/50 overflow-hidden">
+
+            {/* Tab bar */}
+            <div className="flex border-b border-gray-700/60">
+              <button
+                onClick={() => setSenderTab('web')}
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
+                  senderTab === 'web'
+                    ? 'bg-cyber-accent/10 text-cyber-accent border-b-2 border-cyber-accent'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
               >
-                + Gmail Preset
+                <LogIn size={12} />
+                Web Login
+                {webAccounts.length > 0 && (
+                  <span className="ml-1 bg-green-500/20 text-green-400 border border-green-500/30 rounded-full text-[9px] px-1.5 py-0.5 font-bold">
+                    {webAccounts.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setSenderTab('smtp')}
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
+                  senderTab === 'smtp'
+                    ? 'bg-cyber-accent/10 text-cyber-accent border-b-2 border-cyber-accent'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                <Plus size={12} />
+                SMTP
+                {smtps.length > 0 && (
+                  <span className="ml-1 bg-cyber-accent/20 text-cyber-accent border border-cyber-accent/30 rounded-full text-[9px] px-1.5 py-0.5 font-bold">
+                    {smtps.length}
+                  </span>
+                )}
               </button>
             </div>
-            <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="SMTP Host (e.g. smtp.gmail.com)"
-                value={newSmtp.host}
-                onChange={e => setNewSmtp({...newSmtp, host: e.target.value})}
-                className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
-              />
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  placeholder="Port"
-                  value={newSmtp.port}
-                  onChange={e => setNewSmtp({...newSmtp, port: parseInt(e.target.value)})}
-                  className="w-24 bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
-                />
-                <label className="flex items-center gap-2 text-xs text-gray-400 px-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newSmtp.secure}
-                    onChange={e => setNewSmtp({...newSmtp, secure: e.target.checked})}
-                    className="rounded bg-cyber-bg border-gray-700 pointer-events-auto"
-                  />
-                  SSL/TLS
-                </label>
-              </div>
-              <input
-                type="text"
-                placeholder="Username / Email"
-                value={newSmtp.user}
-                onChange={e => setNewSmtp({...newSmtp, user: e.target.value})}
-                className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
-              />
-              <input
-                type="password"
-                placeholder="Direct Password"
-                value={newSmtp.pass}
-                onChange={e => setNewSmtp({...newSmtp, pass: e.target.value})}
-                className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="From Name"
-                  value={newSmtp.fromName}
-                  onChange={e => setNewSmtp({...newSmtp, fromName: e.target.value})}
-                  className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
-                />
-                <input
-                  type="text"
-                  placeholder="From Email"
-                  value={newSmtp.fromEmail}
-                  onChange={e => setNewSmtp({...newSmtp, fromEmail: e.target.value})}
-                  className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
-                />
-              </div>
-              <input
-                type="text"
-                placeholder="Reply-To (Optional)"
-                value={newSmtp.replyTo}
-                onChange={e => setNewSmtp({...newSmtp, replyTo: e.target.value})}
-                className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
-              />
-              <div className="flex gap-2">
-                <GlowButton onClick={handleAddSmtp} className="flex-1">Save SMTP</GlowButton>
-                <button 
-                  onClick={() => setNewSmtp({ host: '', port: 465, user: '', pass: '', secure: true, fromName: '', fromEmail: '', replyTo: '' })}
-                  className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-xs hover:bg-gray-700 transition-all"
-                >
-                  Clear Form
-                </button>
-              </div>
-            </div>
-          </div>
 
-          {/* SMTP List */}
-          <div className="space-y-3 overflow-y-auto max-h-[350px] pr-2 custom-scrollbar">
-            <h3 className="text-xs font-bold text-gray-500 uppercase px-1">Active Senders ({smtps.length})</h3>
-            {smtps.map(smtp => (
-              <div key={smtp.id} className="bg-cyber-card/50 border border-gray-800 rounded-lg p-3 hover:border-gray-700 transition-all group">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-cyber-text truncate">{smtp.user}</p>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider">{smtp.host}:{smtp.port}</p>
+            {/* ── Web Login tab ── */}
+            {senderTab === 'web' && (
+              <div className="p-4 space-y-3">
+                <p className="text-[10px] text-gray-500 leading-relaxed">
+                  Login with a real Chrome browser. Works with <span className="text-green-400 font-semibold">Zoho, Tutanota, Mailfence</span> — providers confirmed to work without bot-detection blocks. Gmail/Outlook/Yahoo block browser automation and are not supported here — use the SMTP tab for those instead.
+                </p>
+
+                {/* Provider selector + connect button */}
+                <div className="space-y-2">
+                  <select
+                    value={selectedProvider}
+                    onChange={e => setSelectedProvider(e.target.value)}
+                    className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text focus:border-cyber-accent/50 focus:outline-none"
+                  >
+                    <option value="zoho">Zoho Mail (Worldwide — Recommended)</option>
+                    <option value="tutanota">Tutanota (Worldwide)</option>
+                    <option value="mailfence">Mailfence (Worldwide)</option>
+                    <option value="webmail">Other Webmail (custom URL)</option>
+                  </select>
+
+                  {selectedProvider === 'webmail' && (
+                    <input
+                      type="text"
+                      placeholder="https://webmail.yourdomain.com"
+                      value={customWebmailUrl}
+                      onChange={e => setCustomWebmailUrl(e.target.value)}
+                      className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text focus:border-cyber-accent/50 focus:outline-none"
+                    />
+                  )}
+
+                  <button
+                    onClick={handleConnectWebAccount}
+                    disabled={!!webLoginLoading}
+                    className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-cyber-accent/80 hover:bg-cyber-accent px-3 py-2.5 rounded-lg transition-all disabled:opacity-50"
+                  >
+                    {webLoginLoading
+                      ? <><Loader2 size={14} className="animate-spin" /> Opening browser...</>
+                      : <><LogIn size={14} /> Open Login Browser</>
+                    }
+                  </button>
+                </div>
+
+                {/* Connected accounts list — grouped by provider */}
+                {webAccounts.length > 0 && (
+                  <div className="space-y-1.5 max-h-[260px] overflow-y-auto custom-scrollbar pt-1">
+                    <p className="text-[10px] text-gray-500 uppercase font-bold px-0.5">
+                      Connected accounts ({webAccounts.length})
+                    </p>
+                    {/* Group by provider */}
+                    {(['gmail','outlook','yahoo','zoho','protonmail','webmail'] as const)
+                      .filter(prov => webAccounts.some(a => a.provider === prov))
+                      .map(prov => {
+                        const provAccounts = webAccounts.filter(a => a.provider === prov);
+                        const provName = provAccounts[0]?.providerName || prov;
+                        const dotColor =
+                          prov === 'gmail'      ? 'bg-[#EA4335]' :
+                          prov === 'outlook'    ? 'bg-[#0072C6]' :
+                          prov === 'yahoo'      ? 'bg-[#6001D2]' :
+                          prov === 'zoho'       ? 'bg-[#E42527]' :
+                          prov === 'protonmail' ? 'bg-[#6D4AFF]' :
+                          'bg-gray-400';
+                        return (
+                          <div key={prov} className="space-y-1">
+                            {/* Provider header */}
+                            <div className="flex items-center gap-1.5 px-1 pt-0.5">
+                              <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
+                              <p className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">
+                                {provName} ({provAccounts.length})
+                              </p>
+                            </div>
+                            {/* Accounts under this provider — only provAccounts, not all webAccounts */}
+                            {provAccounts.map(acc => (
+                              <div key={acc.id} className="bg-black/30 border border-gray-700/50 rounded-lg px-3 py-2 group ml-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+                                    <p className="text-[11px] font-medium text-cyber-text truncate">{acc.email}</p>
+                                  </div>
+                                  <button
+                                    onClick={() => handleLogoutWebAccount(acc.id)}
+                                    className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-red-400 transition-all ml-2 shrink-0"
+                                    title="Remove account"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                                {(acc as any).proxy && (
+                                  <p className="text-[9px] text-green-400/70 mt-0.5 truncate">
+                                    🔀 {(acc as any).proxy.replace(/^https?:\/\//, '').split('@').pop()}
+                                  </p>
+                                )}
+                                {!(acc as any).proxy && (
+                                  <p className="text-[9px] text-yellow-500/60 mt-0.5">⚠ No proxy — add proxies for IP rotation</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })
+                    }
                   </div>
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleTestSmtp(smtp)} className="p-1 hover:text-green-400 text-gray-500" title="Test Connection">
-                      <Play size={12} fill="currentColor" />
-                    </button>
-                    <button onClick={() => smtp.id && handleDeleteSmtp(smtp.id)} className="p-1 hover:text-red-400 text-gray-500" title="Delete">
-                      <Trash2 size={14} />
+                )}
+
+                {/* Web campaign status indicator */}
+                {webAccounts.length > 0 && (
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${webCampaignRunning ? 'bg-green-400 animate-pulse' : 'bg-gray-600'}`} />
+                    <p className="text-[10px] text-gray-400 truncate">{webCampaignRunning ? webCampaignStatus : 'Ready'}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── SMTP tab ── */}
+            {senderTab === 'smtp' && (
+              <div className="p-4 space-y-4">
+                {/* Add SMTP form */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Add Account</p>
+                  </div>
+
+                  {/* Provider preset picker */}
+                  <div className="space-y-2">
+                    <p className="text-[9px] text-gray-500 uppercase tracking-wider font-bold">Click a provider to auto-fill server settings</p>
+
+                    {/* Worldwide — Direct Password */}
+                    <div>
+                      <p className="text-[9px] text-green-400 uppercase font-bold mb-1 px-0.5">🌍 Worldwide — Direct Password (no app password)</p>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { label: 'Zoho Mail',  host: 'smtp.zoho.com',       port: 465, secure: true  },
+                          { label: 'Tutanota',   host: 'smtp.tutanota.com',   port: 587, secure: false },
+                          { label: 'Mailfence',  host: 'smtp.mailfence.com',  port: 465, secure: true  },
+                        ].map(p => (
+                          <button key={p.label} onClick={() => setNewSmtp({ ...newSmtp, host: p.host, port: p.port, secure: p.secure })}
+                            className="text-left bg-green-500/5 border border-green-500/20 hover:border-green-500/50 rounded-lg px-2 py-1.5 transition-all">
+                            <p className="text-[10px] font-semibold text-cyber-text">{p.label}</p>
+                            <p className="text-[8px] text-green-400">Direct pwd ✓</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Worldwide — App Password */}
+                    <div>
+                      <p className="text-[9px] text-yellow-400 uppercase font-bold mb-1 px-0.5">🌍 Worldwide — App Password Required</p>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { label: 'Gmail',    host: 'smtp.gmail.com',       port: 587, secure: false },
+                          { label: 'Yahoo',    host: 'smtp.mail.yahoo.com',  port: 465, secure: true  },
+                          { label: 'AOL',      host: 'smtp.aol.com',         port: 587, secure: false },
+                          { label: 'iCloud',   host: 'smtp.mail.me.com',     port: 587, secure: false },
+                          { label: 'Fastmail', host: 'smtp.fastmail.com',    port: 587, secure: false },
+                        ].map(p => (
+                          <button key={p.label} onClick={() => setNewSmtp({ ...newSmtp, host: p.host, port: p.port, secure: p.secure })}
+                            className="text-left bg-yellow-500/5 border border-yellow-500/20 hover:border-yellow-500/40 rounded-lg px-2 py-1.5 transition-all">
+                            <p className="text-[10px] font-semibold text-cyber-text">{p.label}</p>
+                            <p className="text-[8px] text-yellow-400">App pwd needed</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Europe / US — Direct Password */}
+                    <div>
+                      <p className="text-[9px] text-blue-400 uppercase font-bold mb-1 px-0.5">🇪🇺 Europe/US — Direct Password</p>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { label: 'GMX',       host: 'mail.gmx.com',      port: 587, secure: false },
+                          { label: 'Mail.com',  host: 'smtp.mail.com',     port: 587, secure: false },
+                          { label: 'Web.de',    host: 'smtp.web.de',       port: 587, secure: false },
+                          { label: 'Freenet',   host: 'mx.freenet.de',     port: 587, secure: false },
+                          { label: 'T-Online',  host: 'securesmtp.t-online.de', port: 465, secure: true },
+                          { label: 'Orange.fr', host: 'smtp.orange.fr',    port: 465, secure: true  },
+                          { label: 'Laposte',   host: 'smtp.laposte.net',  port: 465, secure: true  },
+                          { label: 'Libero.it', host: 'smtp.libero.it',    port: 465, secure: true  },
+                          { label: 'Alice.it',  host: 'smtp.alice.it',     port: 465, secure: true  },
+                        ].map(p => (
+                          <button key={p.label} onClick={() => setNewSmtp({ ...newSmtp, host: p.host, port: p.port, secure: p.secure })}
+                            className="text-left bg-blue-500/5 border border-blue-500/20 hover:border-blue-500/40 rounded-lg px-2 py-1.5 transition-all">
+                            <p className="text-[10px] font-semibold text-cyber-text">{p.label}</p>
+                            <p className="text-[8px] text-blue-400">Direct pwd ✓</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Asia — China */}
+                    <div>
+                      <p className="text-[9px] text-red-400 uppercase font-bold mb-1 px-0.5">🇨🇳 China — Direct Password</p>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { label: '163.com',  host: 'smtp.163.com',  port: 465, secure: true  },
+                          { label: '126.com',  host: 'smtp.126.com',  port: 465, secure: true  },
+                          { label: 'Sina',     host: 'smtp.sina.com', port: 465, secure: true  },
+                          { label: 'QQ Mail',  host: 'smtp.qq.com',   port: 465, secure: true  },
+                        ].map(p => (
+                          <button key={p.label} onClick={() => setNewSmtp({ ...newSmtp, host: p.host, port: p.port, secure: p.secure })}
+                            className="text-left bg-red-500/5 border border-red-500/20 hover:border-red-500/40 rounded-lg px-2 py-1.5 transition-all">
+                            <p className="text-[10px] font-semibold text-cyber-text">{p.label}</p>
+                            <p className="text-[8px] text-red-400">Direct pwd ✓</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Asia — Korea / Singapore */}
+                    <div>
+                      <p className="text-[9px] text-purple-400 uppercase font-bold mb-1 px-0.5">🌏 Korea / Singapore</p>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { label: 'Daum/Kakao', host: 'smtp.daum.net',         port: 465, secure: true,  note: 'Direct pwd ✓',   color: 'text-purple-400' },
+                          { label: 'Naver',      host: 'smtp.naver.com',        port: 465, secure: true,  note: 'App pwd needed', color: 'text-yellow-400' },
+                          { label: 'SingNet',    host: 'smtp.singnet.com.sg',   port: 465, secure: true,  note: 'SingTel users',  color: 'text-purple-400' },
+                        ].map(p => (
+                          <button key={p.label} onClick={() => setNewSmtp({ ...newSmtp, host: p.host, port: p.port, secure: p.secure })}
+                            className="text-left bg-purple-500/5 border border-purple-500/20 hover:border-purple-500/40 rounded-lg px-2 py-1.5 transition-all">
+                            <p className="text-[10px] font-semibold text-cyber-text">{p.label}</p>
+                            <p className={`text-[8px] ${p.note.includes('App') ? 'text-yellow-400' : 'text-purple-400'}`}>{p.note}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* App password help */}
+                    <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg px-2.5 py-2 space-y-1">
+                      <p className="text-[9px] text-yellow-400/80 font-bold uppercase">Where to generate app passwords:</p>
+                      <p className="text-[9px] text-gray-500">Gmail → myaccount.google.com → Security → App passwords</p>
+                      <p className="text-[9px] text-gray-500">Yahoo → account.security.yahoo.com → App passwords</p>
+                      <p className="text-[9px] text-gray-500">AOL → account.security.aol.com → App passwords</p>
+                      <p className="text-[9px] text-gray-500">iCloud → appleid.apple.com → App-specific passwords</p>
+                      <p className="text-[9px] text-gray-500">Fastmail → fastmail.com → Settings → App passwords</p>
+                      <p className="text-[9px] text-gray-500">Naver → mail.naver.com → Settings → IMAP/SMTP → App password</p>
+                      <p className="text-[9px] text-gray-500">QQ Mail → mail.qq.com → Settings → Account → Auth code</p>
+                    </div>
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="SMTP Host"
+                    value={newSmtp.host}
+                    onChange={e => setNewSmtp({...newSmtp, host: e.target.value})}
+                    className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      placeholder="Port"
+                      value={newSmtp.port}
+                      onChange={e => setNewSmtp({...newSmtp, port: parseInt(e.target.value)})}
+                      className="w-24 bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
+                    />
+                    <label className="flex items-center gap-2 text-xs text-gray-400 px-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newSmtp.secure}
+                        onChange={e => setNewSmtp({...newSmtp, secure: e.target.checked})}
+                        className="rounded bg-cyber-bg border-gray-700 pointer-events-auto"
+                      />
+                      SSL/TLS
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Username / Email"
+                    value={newSmtp.user}
+                    onChange={e => setNewSmtp({...newSmtp, user: e.target.value})}
+                    className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password or App Password"
+                    value={newSmtp.pass}
+                    onChange={e => setNewSmtp({...newSmtp, pass: e.target.value})}
+                    className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="From Name"
+                      value={newSmtp.fromName}
+                      onChange={e => setNewSmtp({...newSmtp, fromName: e.target.value})}
+                      className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
+                    />
+                    <input
+                      type="text"
+                      placeholder="From Email"
+                      value={newSmtp.fromEmail}
+                      onChange={e => setNewSmtp({...newSmtp, fromEmail: e.target.value})}
+                      className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Reply-To (Optional)"
+                    value={newSmtp.replyTo}
+                    onChange={e => setNewSmtp({...newSmtp, replyTo: e.target.value})}
+                    className="w-full bg-cyber-bg border border-gray-700 rounded-lg px-3 py-2 text-sm text-cyber-text"
+                  />
+                  <div className="flex gap-2">
+                    <GlowButton onClick={handleAddSmtp} className="flex-1">Save SMTP</GlowButton>
+                    <button
+                      onClick={() => setNewSmtp({ host: '', port: 465, user: '', pass: '', secure: true, fromName: '', fromEmail: '', replyTo: '' })}
+                      className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-xs hover:bg-gray-700 transition-all"
+                    >
+                      Clear
                     </button>
                   </div>
                 </div>
-                {smtp.replyTo && (
-                  <p className="text-[10px] text-cyber-accent/80 italic">Reply-to: {smtp.replyTo}</p>
+
+                {/* SMTP accounts list */}
+                {smtps.length > 0 && (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pt-1">
+                    <div className="flex items-center justify-between px-0.5">
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">Active ({smtps.length})</p>
+                      <button
+                        onClick={handleClearMemory}
+                        className="text-[9px] text-red-400/60 hover:text-red-400 transition-all"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                    {smtps.map(smtp => (
+                      <div key={smtp.id} className="bg-black/30 border border-gray-800 rounded-lg p-3 hover:border-gray-700 transition-all group">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-cyber-text truncate">{smtp.user}</p>
+                            <p className="text-[9px] text-gray-500 uppercase tracking-wider">{smtp.host}:{smtp.port}</p>
+                          </div>
+                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2">
+                            <button onClick={() => handleTestSmtp(smtp)} className="p-1 hover:text-green-400 text-gray-500" title="Test">
+                              <Play size={11} fill="currentColor" />
+                            </button>
+                            <button onClick={() => smtp.id && handleDeleteSmtp(smtp.id)} className="p-1 hover:text-red-400 text-gray-500" title="Delete">
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
+                        </div>
+                        {smtp.replyTo && (
+                          <p className="text-[9px] text-cyber-accent/70 italic mt-1">Reply-to: {smtp.replyTo}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
+            )}
           </div>
         </div>
 
@@ -536,7 +915,7 @@ export const Mailer: React.FC = () => {
 
                   <div className="p-3 bg-cyber-accent/5 border border-cyber-accent/20 rounded-lg text-[11px] text-gray-400 leading-relaxed mt-2">
                     <Clock size={12} className="inline mr-1 text-cyber-accent" />
-                    **Safety Rule**: System sends 1 email per minute across all rotated SMTPs to maximize deliverability and avoid spam filters.
+                    **Safety Rule**: System uses a humanized delay cycle (45s–75s) between sends to maximize deliverability and bypass bot detection.
                     <hr className="my-2 border-gray-800" />
                     <div className="space-y-2">
                         <div className="flex justify-between items-center">
